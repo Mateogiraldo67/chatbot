@@ -1,0 +1,17 @@
+{
+  "chat": {
+    "title": "Chat Inteligente",
+    "placeholder": "Escribe tu mensaje aquí...",
+    "send": "Enviar",
+    "sending": "Enviando...",
+    "error": "Error al enviar el mensaje",
+    "retry": "Reintentar",
+    "clear": "Limpiar chat"
+  },
+  "settings": {
+    "title": "Configuración",
+    "topK": "Top K",
+    "temperature": "Temperatura",
+    "save": "Guardar"
+  }
+}
