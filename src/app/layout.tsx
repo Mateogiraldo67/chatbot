@@ -15,4 +15,12 @@ export default async function RootLayout({
   const messages = await getMessages();
 
   return (
-    <html lang=\"es\">\n      <body>\n        <NextIntlClientProvider messages={messages}>\n          {children}\n        </NextIntlClientProvider>\n      </body>\n    </html>\n  );\n}
+    <html lang="es">
+      <body>
+        <NextIntlClientProvider messages={messages}>
+          {children}
+        </NextIntlClientProvider>
+      </body>
+    </html>
+  );
+}
