@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env.local
+.env.*.local
+.next
+out
+coverage
+.DS_Store
+*.md
+.vscode
+.idea
+.eslintcache
+playwright-report
+test-results
