@@ -15,10 +15,9 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-RUN npm install -g serve
-
 COPY --from=builder /app/.next /app/.next
 COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules /app/node_modules
 
 EXPOSE 3000
 
