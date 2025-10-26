@@ -2,6 +2,7 @@ export interface ChatRequest {
   chatInput: string;
   topK?: number;
   temperature?: number;
+  backend?: 'python' | 'gemini' | 'chatgpt';
 }
 
 export interface ChatResponse {

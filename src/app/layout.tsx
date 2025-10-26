@@ -4,7 +4,7 @@ import { getMessages } from 'next-intl/server';
 
 export const metadata = {
   title: 'Chat Inteligente',
-  description: 'Chatbot inteligente con integración N8N',
+  description: 'Asistente inteligente con múltiples modelos de lenguaje',
 }
 
 export default async function RootLayout({
@@ -16,7 +16,7 @@ export default async function RootLayout({
 
   return (
     <html lang="es">
-      <body>
+      <body className="h-screen">
         <NextIntlClientProvider messages={messages}>
           {children}
         </NextIntlClientProvider>

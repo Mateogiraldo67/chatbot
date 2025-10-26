@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "autoprefixer": "^10.4.21",
-    "next": "14.2.13",
+    "bcrypt": "^5.1.1",
+    "next": "^14.2.32",
     "next-intl": "^3.20.0",
     "react": "^18",
     "react-dom": "^18"

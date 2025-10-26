@@ -1,3 +1,183 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Chat Flow', () => {\n  test.beforeEach(async ({ page }) => {\n    // Mock the N8N webhook endpoint\n    await page.route('**/api/chat/send', async route => {\n      const request = route.request();\n      const postData = request.postDataJSON();\n      \n      // Simulate N8N response with chunks\n      const mockResponse = {\n        output: `Esta es una respuesta simulada para: \"${postData.chatInput}\". Esta respuesta está siendo dividida en chunks para demostrar el streaming de datos. Aquí hay más contenido para hacer la respuesta más larga y poder observar el efecto de chunking en acción.`,\n        sources: [\n          {\n            title: 'Fuente de ejemplo 1',\n            url: 'https://example.com/1',\n            snippet: 'Este es un snippet de ejemplo de la primera fuente'\n          },\n          {\n            title: 'Fuente de ejemplo 2', \n            url: 'https://example.com/2',\n            snippet: 'Este es un snippet de ejemplo de la segunda fuente'\n          }\n        ],\n        usage: {\n          promptTokens: 50,\n          completionTokens: 100,\n          totalTokens: 150\n        }\n      };\n\n      // Simulate SSE streaming\n      const chunks = [];\n      const chunkSize = 50;\n      for (let i = 0; i < mockResponse.output.length; i += chunkSize) {\n        chunks.push(mockResponse.output.slice(i, i + chunkSize));\n      }\n\n      let sseData = 'data: {\"type\": \"connected\"}\\n\\n';\n      \n      chunks.forEach((chunk, index) => {\n        const isLast = index === chunks.length - 1;\n        const chunkData = {\n          type: 'chunk',\n          content: chunk,\n          isLast,\n          ...(isLast && { sources: mockResponse.sources }),\n          ...(isLast && { usage: mockResponse.usage })\n        };\n        sseData += `data: ${JSON.stringify(chunkData)}\\n\\n`;\n      });\n      \n      sseData += 'data: {\"type\": \"done\"}\\n\\n';\n\n      await route.fulfill({\n        status: 200,\n        headers: {\n          'Content-Type': 'text/event-stream',\n          'Cache-Control': 'no-cache',\n          'Connection': 'keep-alive'\n        },\n        body: sseData\n      });\n    });\n\n    await page.goto('/');\n  });\n\n  test('should display chat interface correctly', async ({ page }) => {\n    // Check if main elements are present\n    await expect(page.getByTestId('chat-title')).toBeVisible();\n    await expect(page.getByTestId('chat-title')).toHaveText('Chat Inteligente');\n    \n    await expect(page.getByTestId('chat-input')).toBeVisible();\n    await expect(page.getByTestId('send-button')).toBeVisible();\n    await expect(page.getByTestId('settings-toggle')).toBeVisible();\n    await expect(page.getByTestId('clear-chat')).toBeVisible();\n    \n    await expect(page.getByTestId('messages-container')).toBeVisible();\n  });\n\n  test('should toggle settings panel', async ({ page }) => {\n    // Settings panel should not be visible initially\n    await expect(page.getByTestId('settings-panel')).not.toBeVisible();\n    \n    // Click settings toggle\n    await page.getByTestId('settings-toggle').click();\n    \n    // Settings panel should be visible now\n    await expect(page.getByTestId('settings-panel')).toBeVisible();\n    await expect(page.getByTestId('topk-input')).toBeVisible();\n    await expect(page.getByTestId('temperature-input')).toBeVisible();\n    \n    // Click settings toggle again to hide\n    await page.getByTestId('settings-toggle').click();\n    await expect(page.getByTestId('settings-panel')).not.toBeVisible();\n  });\n\n  test('should update settings values', async ({ page }) => {\n    // Open settings\n    await page.getByTestId('settings-toggle').click();\n    \n    // Update topK value\n    const topKInput = page.getByTestId('topk-input');\n    await topKInput.fill('10');\n    await expect(topKInput).toHaveValue('10');\n    \n    // Update temperature value\n    const temperatureInput = page.getByTestId('temperature-input');\n    await temperatureInput.fill('0.9');\n    await expect(temperatureInput).toHaveValue('0.9');\n  });\n\n  test('should send message and receive response', async ({ page }) => {\n    const testMessage = '¿Qué es la inteligencia artificial?';\n    \n    // Type message\n    await page.getByTestId('chat-input').fill(testMessage);\n    \n    // Send message\n    await page.getByTestId('send-button').click();\n    \n    // Check if user message appears\n    await expect(page.getByTestId('message-user')).toBeVisible();\n    await expect(page.getByTestId('message-user')).toContainText(testMessage);\n    \n    // Check if loading indicator appears\n    await expect(page.getByTestId('loading-indicator')).toBeVisible();\n    \n    // Wait for assistant response\n    await expect(page.getByTestId('message-assistant')).toBeVisible({ timeout: 10000 });\n    \n    // Check if loading indicator disappears\n    await expect(page.getByTestId('loading-indicator')).not.toBeVisible();\n    \n    // Check if response contains expected content\n    const assistantMessage = page.getByTestId('message-assistant');\n    await expect(assistantMessage).toContainText('Esta es una respuesta simulada para');\n    await expect(assistantMessage).toContainText(testMessage);\n    \n    // Check if input is cleared\n    await expect(page.getByTestId('chat-input')).toHaveValue('');\n  });\n\n  test('should display sources and usage information', async ({ page }) => {\n    // Send a message\n    await page.getByTestId('chat-input').fill('Test message');\n    await page.getByTestId('send-button').click();\n    \n    // Wait for response\n    await expect(page.getByTestId('message-assistant')).toBeVisible({ timeout: 10000 });\n    \n    // Check for sources\n    await expect(page.getByTestId('source-link-0')).toBeVisible();\n    await expect(page.getByTestId('source-link-1')).toBeVisible();\n    \n    // Verify source content\n    await expect(page.getByTestId('source-link-0')).toHaveText('Fuente de ejemplo 1');\n    await expect(page.getByTestId('source-link-0')).toHaveAttribute('href', 'https://example.com/1');\n    \n    // Check for usage information\n    await expect(page.getByTestId('usage-info')).toBeVisible();\n    await expect(page.getByTestId('usage-info')).toContainText('Tokens: 150');\n    await expect(page.getByTestId('usage-info')).toContainText('prompt: 50');\n    await expect(page.getByTestId('usage-info')).toContainText('completion: 100');\n  });\n\n  test('should clear chat messages', async ({ page }) => {\n    // Send a message first\n    await page.getByTestId('chat-input').fill('Test message');\n    await page.getByTestId('send-button').click();\n    \n    // Wait for messages to appear\n    await expect(page.getByTestId('message-user')).toBeVisible();\n    await expect(page.getByTestId('message-assistant')).toBeVisible({ timeout: 10000 });\n    \n    // Clear chat\n    await page.getByTestId('clear-chat').click();\n    \n    // Check that messages are cleared\n    await expect(page.getByTestId('message-user')).not.toBeVisible();\n    await expect(page.getByTestId('message-assistant')).not.toBeVisible();\n  });\n\n  test('should disable send button when input is empty', async ({ page }) => {\n    // Initially, input should be empty and button disabled\n    await expect(page.getByTestId('chat-input')).toHaveValue('');\n    await expect(page.getByTestId('send-button')).toBeDisabled();\n    \n    // Type something\n    await page.getByTestId('chat-input').fill('Some text');\n    await expect(page.getByTestId('send-button')).toBeEnabled();\n    \n    // Clear input\n    await page.getByTestId('chat-input').fill('');\n    await expect(page.getByTestId('send-button')).toBeDisabled();\n  });\n\n  test('should disable send button while loading', async ({ page }) => {\n    // Type message\n    await page.getByTestId('chat-input').fill('Test message');\n    \n    // Button should be enabled\n    await expect(page.getByTestId('send-button')).toBeEnabled();\n    \n    // Send message\n    await page.getByTestId('send-button').click();\n    \n    // Button should be disabled while loading\n    await expect(page.getByTestId('send-button')).toBeDisabled();\n    \n    // Wait for response to complete\n    await expect(page.getByTestId('message-assistant')).toBeVisible({ timeout: 10000 });\n    await expect(page.getByTestId('loading-indicator')).not.toBeVisible();\n    \n    // Button should be enabled again (but still disabled due to empty input)\n    await expect(page.getByTestId('send-button')).toBeDisabled();\n  });\n\n  test('should handle enter key to send message', async ({ page }) => {\n    const testMessage = 'Test enter key';\n    \n    // Type message\n    await page.getByTestId('chat-input').fill(testMessage);\n    \n    // Press Enter\n    await page.getByTestId('chat-input').press('Enter');\n    \n    // Check if message was sent\n    await expect(page.getByTestId('message-user')).toBeVisible();\n    await expect(page.getByTestId('message-user')).toContainText(testMessage);\n  });\n});
+test.describe('Chat Flow', () => {
+  test.beforeEach(async ({ page }) => {
+    // Mock the N8N webhook endpoint
+    await page.route('**/api/chat/send', async route => {
+      const request = route.request();
+      const postData = request.postDataJSON();
+      
+      // Simulate N8N response with chunks
+      const mockResponse = {
+        output: `Esta es una respuesta simulada para: "${postData.chatInput}". Esta respuesta está siendo dividida en chunks para demostrar el streaming de datos. Aquí hay más contenido para hacer la respuesta más larga y poder observar el efecto de chunking en acción.`,
+        sources: [
+          {
+            title: 'Fuente de ejemplo 1',
+            url: 'https://example.com/1',
+            snippet: 'Este es un snippet de ejemplo de la primera fuente'
+          },
+          {
+            title: 'Fuente de ejemplo 2', 
+            url: 'https://example.com/2',
+            snippet: 'Este es un snippet de ejemplo de la segunda fuente'
+          }
+        ],
+        usage: {
+          promptTokens: 50,
+          completionTokens: 100,
+          totalTokens: 150
+        }
+      };
+
+      // Simulate SSE streaming
+      const chunks = [];
+      const chunkSize = 50;
+      for (let i = 0; i < mockResponse.output.length; i += chunkSize) {
+        chunks.push(mockResponse.output.slice(i, i + chunkSize));
+      }
+
+      let sseData = 'data: {"type": "connected"}\\n\\n';
+      
+      chunks.forEach((chunk, index) => {
+        const isLast = index === chunks.length - 1;
+        const chunkData = {
+          type: 'chunk',
+          content: chunk,
+          isLast,
+          ...(isLast && { sources: mockResponse.sources }),
+          ...(isLast && { usage: mockResponse.usage })
+        };
+        sseData += `data: ${JSON.stringify(chunkData)}\\n\\n`;
+      });
+      
+      sseData += 'data: {"type": "done"}\\n\\n';
+
+      await route.fulfill({
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        },
+        body: sseData
+      });
+    });
+
+    await page.goto('/');
+  });
+
+  test('should display chat interface correctly', async ({ page }) => {
+    // Check if main elements are present
+    await expect(page.getByTestId('chat-title')).toBeVisible();
+    await expect(page.getByTestId('chat-title')).toHaveText('Chat Inteligente');
+    
+    await expect(page.getByTestId('chat-input')).toBeVisible();
+    await expect(page.getByTestId('send-button')).toBeVisible();
+    await expect(page.getByTestId('settings-toggle')).toBeVisible();
+    await expect(page.getByTestId('clear-chat')).toBeVisible();
+    
+    await expect(page.getByTestId('messages-container')).toBeVisible();
+  });
+
+  test('should toggle settings panel', async ({ page }) => {
+    // Settings panel should not be visible initially
+    await expect(page.getByTestId('settings-panel')).not.toBeVisible();
+    
+    // Click settings toggle
+    await page.getByTestId('settings-toggle').click();
+    
+    // Settings panel should be visible now
+    await expect(page.getByTestId('settings-panel')).toBeVisible();
+    await expect(page.getByTestId('topk-input')).toBeVisible();
+    await expect(page.getByTestId('temperature-input')).toBeVisible();
+    
+    // Click settings toggle again to hide
+    await page.getByTestId('settings-toggle').click();
+    await expect(page.getByTestId('settings-panel')).not.toBeVisible();
+  });
+
+  test('should send message and receive response', async ({ page }) => {
+    const testMessage = '¿Qué es la inteligencia artificial?';
+    
+    // Type message
+    await page.getByTestId('chat-input').fill(testMessage);
+    
+    // Send message
+    await page.getByTestId('send-button').click();
+    
+    // Check if user message appears
+    await expect(page.getByTestId('message-user')).toBeVisible();
+    await expect(page.getByTestId('message-user')).toContainText(testMessage);
+    
+    // Check if loading indicator appears
+    await expect(page.getByTestId('loading-indicator')).toBeVisible();
+    
+    // Wait for assistant response
+    await expect(page.getByTestId('message-assistant')).toBeVisible({ timeout: 10000 });
+    
+    // Check if loading indicator disappears
+    await expect(page.getByTestId('loading-indicator')).not.toBeVisible();
+    
+    // Check if response contains expected content
+    const assistantMessage = page.getByTestId('message-assistant');
+    await expect(assistantMessage).toContainText('Esta es una respuesta simulada para');
+    await expect(assistantMessage).toContainText(testMessage);
+    
+    // Check if input is cleared
+    await expect(page.getByTestId('chat-input')).toHaveValue('');
+  });
+
+  test('should display sources and usage information', async ({ page }) => {
+    // Send a message
+    await page.getByTestId('chat-input').fill('Test message');
+    await page.getByTestId('send-button').click();
+    
+    // Wait for response
+    await expect(page.getByTestId('message-assistant')).toBeVisible({ timeout: 10000 });
+    
+    // Check for sources
+    await expect(page.getByTestId('source-link-0')).toBeVisible();
+    await expect(page.getByTestId('source-link-1')).toBeVisible();
+    
+    // Verify source content
+    await expect(page.getByTestId('source-link-0')).toHaveText('Fuente de ejemplo 1');
+    await expect(page.getByTestId('source-link-0')).toHaveAttribute('href', 'https://example.com/1');
+    
+    // Check for usage information
+    await expect(page.getByTestId('usage-info')).toBeVisible();
+    await expect(page.getByTestId('usage-info')).toContainText('Tokens: 150');
+    await expect(page.getByTestId('usage-info')).toContainText('prompt: 50');
+    await expect(page.getByTestId('usage-info')).toContainText('completion: 100');
+  });
+
+  test('should clear chat messages', async ({ page }) => {
+    // Send a message first
+    await page.getByTestId('chat-input').fill('Test message');
+    await page.getByTestId('send-button').click();
+    
+    // Wait for messages to appear
+    await expect(page.getByTestId('message-user')).toBeVisible();
+    await expect(page.getByTestId('message-assistant')).toBeVisible({ timeout: 10000 });
+    
+    // Clear chat
+    await page.getByTestId('clear-chat').click();
+    
+    // Check that messages are cleared
+    await expect(page.getByTestId('message-user')).not.toBeVisible();
+    await expect(page.getByTestId('message-assistant')).not.toBeVisible();
+  });
+
+  test('should disable send button when input is empty', async ({ page }) => {
+    // Initially, input should be empty and button disabled
+    await expect(page.getByTestId('chat-input')).toHaveValue('');
+    await expect(page.getByTestId('send-button')).toBeDisabled();
+    
+    // Type something
+    await page.getByTestId('chat-input').fill('Some text');
+    await expect(page.getByTestId('send-button')).toBeEnabled();
+    
+    // Clear input
+    await page.getByTestId('chat-input').fill('');
+    await expect(page.getByTestId('send-button')).toBeDisabled();
+  });
+});

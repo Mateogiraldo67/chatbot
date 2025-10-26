@@ -6,7 +6,20 @@
     "sending": "Enviando...",
     "error": "Error al enviar el mensaje",
     "retry": "Reintentar",
-    "clear": "Limpiar chat"
+    "clear": "Limpiar chat",
+    "conversations": "Conversaciones",
+    "newConversation": "Nueva conversación",
+    "noConversations": "No hay conversaciones aún",
+    "deleteConversation": "Eliminar conversación",
+    "showConversations": "Mostrar conversaciones",
+    "newChat": "Nuevo chat",
+    "chatHistory": "Historial de chats",
+    "login": "Iniciar sesión",
+    "logout": "Cerrar sesión",
+    "username": "Nombre de usuario",
+    "password": "Contraseña",
+    "uploadFile": "Subir archivo",
+    "uploading": "Subiendo..."
   },
   "settings": {
     "title": "Configuración",
