@@ -2,9 +2,7 @@ version: "3.8"
 
 services:
   chatbot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: mateogiraldo/chatbot:latest
     environment:
       - N8N_BASE_URL=https://sswebhookss.mateogiraldo.online
       - N8N_WEBHOOK_PATH=/webhook/e26fc1da-1f0b-4391-9e8b-19736d89b924
