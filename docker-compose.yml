@@ -11,6 +11,9 @@ services:
       - N8N_GEMINI_FILE_UPLOAD_PATH=/form/89c24c04-11c0-49b8-940b-df8b3a361a53
       - NEXT_PUBLIC_APP_URL=http://localhost:3000
       - PYTHON_BACKEND_URL=https://back.jhosbandev.site
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+      - DISABLE_SSL_VERIFY=true
+      - NODE_ENV=production
     networks:
       - traefik_public
     deploy:
