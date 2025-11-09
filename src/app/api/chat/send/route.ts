@@ -2,6 +2,114 @@
 import { NextRequest } from 'next/server';
 import { ChatRequest, N8nWebhookResponse } from '@/types/chat';
 
+// Handle Python backend communication
+async function handlePythonBackend(body: ChatRequest) {
+  const encoder = new TextEncoder();
+  
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Send initial connection event
+        controller.enqueue(encoder.encode('data: {"type": "connected"}\n\n'));
+
+        // Get chatbot ID from request (this should be stored in localStorage or session)
+        const chatbotId = body.chatbotId;
+        
+        if (!chatbotId) {
+          const errorEvent = {
+            type: 'error',
+            error: 'No chatbot ID provided. Please upload a document first.'
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
+          controller.close();
+          return;
+        }
+
+        // Ask question to the Python backend
+        const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/python/chat/${chatbotId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            question: body.chatInput
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const errorEvent = {
+            type: 'error',
+            error: `Error from Python backend: ${errorText}`
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
+          controller.close();
+          return;
+        }
+
+        const result = await response.json();
+        
+        if (result.error) {
+          const errorEvent = {
+            type: 'error',
+            error: result.error
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
+          controller.close();
+          return;
+        }
+
+        // Process the answer and send it as chunks
+        const answer = result.answer || 'No response received from backend';
+        const chunks = chunkText(answer, 700);
+        
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i];
+          const isLast = i === chunks.length - 1;
+          
+          const eventData = {
+            type: 'chunk',
+            content: chunk,
+            isLast,
+            ...(isLast && { sources: [] }), // Python backend doesn't return sources yet
+            ...(isLast && { usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } })
+          };
+
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(eventData)}\n\n`));
+          
+          if (!isLast) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+        
+        // Send completion event
+        controller.enqueue(encoder.encode('data: {"type": "done"}\n\n'));
+        
+      } catch (error) {
+        console.error('Python Backend Error:', error);
+        const errorEvent = {
+          type: 'error',
+          error: error instanceof Error ? error.message : 'Unknown error occurred'
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
+      } finally {
+        controller.close();
+      }
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
+}
+
 function chunkText(text: string, chunkSize: number = 700): string[] {
   const chunks: string[] = [];
   let currentIndex = 0;
@@ -45,6 +153,11 @@ export async function POST(req: NextRequest) {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
+    }
+
+    // Handle Python backend separately
+    if (body.backend === 'python') {
+      return handlePythonBackend(body);
     }
 
     const n8nBaseUrl = process.env.N8N_BASE_URL;

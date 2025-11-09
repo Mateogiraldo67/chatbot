@@ -3,6 +3,7 @@ export interface ChatRequest {
   topK?: number;
   temperature?: number;
   backend?: 'python' | 'gemini' | 'chatgpt';
+  chatbotId?: string; // For Python backend
 }
 
 export interface ChatResponse {

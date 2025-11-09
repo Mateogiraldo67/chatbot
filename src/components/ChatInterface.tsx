@@ -17,6 +17,7 @@ interface Chat {
   messages: Message[];
   backend: 'python' | 'gemini' | 'chatgpt';
   createdAt: Date;
+  chatbotId?: string; // For Python backend
 }
 
 // Simple authentication context (in a real app, this would be more robust)
@@ -238,15 +239,25 @@ export default function ChatInterface() {
       const formData = new FormData();
       formData.append('file', file);
       
-      // Determine the upload endpoint based on the selected backend
-      let uploadUrl = process.env.N8N_BASE_URL || 'https://sswebhookss.mateogiraldo.online';
-      const fileUploadPath = process.env.N8N_FILE_UPLOAD_PATH || '/form/82848bc4-5ea2-4e5a-8bb6-3c09b94a8c5d';
-      const geminiFileUploadPath = process.env.N8N_GEMINI_FILE_UPLOAD_PATH || '/form/89c24c04-11c0-49b8-940b-df8b3a361a53';
+      let uploadUrl = '';
+      let isUsingPythonBackend = false;
       
-      if (currentChat?.backend === 'gemini') {
-        uploadUrl += geminiFileUploadPath;
+      // Determine the upload endpoint based on the selected backend
+      if (currentChat?.backend === 'python') {
+        // Use our Python backend API
+        uploadUrl = '/api/python/upload';
+        isUsingPythonBackend = true;
       } else {
-        uploadUrl += fileUploadPath;
+        // Use N8N for other backends
+        let baseUrl = process.env.N8N_BASE_URL || 'https://sswebhookss.mateogiraldo.online';
+        const fileUploadPath = process.env.N8N_FILE_UPLOAD_PATH || '/form/82848bc4-5ea2-4e5a-8bb6-3c09b94a8c5d';
+        const geminiFileUploadPath = process.env.N8N_GEMINI_FILE_UPLOAD_PATH || '/form/89c24c04-11c0-49b8-940b-df8b3a361a53';
+        
+        if (currentChat?.backend === 'gemini') {
+          uploadUrl = baseUrl + geminiFileUploadPath;
+        } else {
+          uploadUrl = baseUrl + fileUploadPath;
+        }
       }
       
       // Show a message to the user
@@ -283,23 +294,39 @@ export default function ChatInterface() {
       });
       
       if (response.ok) {
+        let successMessage = `Archivo ${file.name} subido exitosamente.`;
+        let chatbotId: string | undefined;
+        
+        if (isUsingPythonBackend) {
+          const result = await response.json();
+          chatbotId = result.chatbot_id;
+          if (chatbotId) {
+            successMessage += ` Chatbot ID: ${chatbotId}. Ahora puedes hacer preguntas sobre el documento.`;
+          }
+        }
+        
         setChats(prev => {
-          const successMessage: Message = { 
+          const successMsg: Message = { 
             role: 'assistant', 
-            content: `Archivo ${file.name} subido exitosamente.` 
+            content: successMessage
           };
           
           if (currentChatId) {
             return prev.map(chat => 
               chat.id === currentChatId 
-                ? { ...chat, messages: [...chat.messages, successMessage] } 
+                ? { 
+                    ...chat, 
+                    messages: [...chat.messages, successMsg],
+                    ...(chatbotId && { chatbotId })
+                  } 
                 : chat
             );
           }
           return prev;
         });
       } else {
-        throw new Error(`Error en la subida: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Error en la subida: ${response.status} - ${errorText}`);
       }
     } catch (error) {
       console.error('Error uploading file:', error);
@@ -338,6 +365,23 @@ export default function ChatInterface() {
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading || !currentChatId) return;
 
+    // Validate Python backend requirements
+    if (currentChat?.backend === 'python' && !currentChat?.chatbotId) {
+      setChats(prev => prev.map(chat => 
+        chat.id === currentChatId 
+          ? { 
+              ...chat, 
+              messages: [...chat.messages, 
+                { role: 'user', content: input },
+                { role: 'assistant', content: 'Para usar Python RAG necesitas subir primero un documento PDF. Usa el botón "Subir archivo" en la parte superior.' }
+              ]
+            } 
+          : chat
+      ));
+      setInput('');
+      return;
+    }
+
     // Add user message to current chat
     const userMessage: Message = { role: 'user', content: input };
     
@@ -356,17 +400,24 @@ export default function ChatInterface() {
 
     try {
       // Send message to appropriate backend based on selected option
+      const requestBody: any = {
+        chatInput: input,
+        topK: 5,
+        temperature: 0.7,
+        backend: currentChat?.backend || 'python',
+      };
+
+      // Add chatbotId for Python backend
+      if (currentChat?.backend === 'python' && currentChat?.chatbotId) {
+        requestBody.chatbotId = currentChat.chatbotId;
+      }
+
       const response = await fetch('/api/chat/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          chatInput: input,
-          topK: 5,
-          temperature: 0.7,
-          backend: currentChat?.backend || 'python',
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       // Check if response is ok and body exists
@@ -453,13 +504,13 @@ export default function ChatInterface() {
     const backend = currentChat?.backend || 'python';
     switch (backend) {
       case 'python':
-        return { name: 'Python', description: 'Modelo básico de procesamiento' };
+        return { name: 'Python RAG', description: 'Sistema de búsqueda vectorial con documentos PDF' };
       case 'gemini':
         return { name: 'N8N + Gemini', description: 'Integración con flujos automatizados' };
       case 'chatgpt':
         return { name: 'N8N + ChatGPT', description: 'Integración con flujos automatizados' };
       default:
-        return { name: 'Python', description: 'Modelo básico de procesamiento' };
+        return { name: 'Python RAG', description: 'Sistema de búsqueda vectorial con documentos PDF' };
     }
   };
 
@@ -756,7 +807,9 @@ export default function ChatInterface() {
                 </div>
                 <h2 className="text-3xl font-bold text-gray-800 mb-2">Chat Inteligente</h2>
                 <p className="text-gray-600 max-w-md mb-8">
-                  Empieza una conversación seleccionando un modelo y escribiendo tu primer mensaje.
+                  {currentChat?.backend === 'python' 
+                    ? 'Para usar Python RAG, primero sube un documento PDF usando el botón "Subir archivo".' 
+                    : 'Empieza una conversación seleccionando un modelo y escribiendo tu primer mensaje.'}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl">
                   <div 
@@ -765,9 +818,9 @@ export default function ChatInterface() {
                   >
                     <div className="flex items-center mb-2">
                       <div className="w-3 h-3 rounded-full bg-gray-400 mr-2"></div>
-                      <h3 className="font-semibold text-gray-800">Python</h3>
+                      <h3 className="font-semibold text-gray-800">Python RAG</h3>
                     </div>
-                    <p className="text-xs text-gray-600">Modelo básico de procesamiento local</p>
+                    <p className="text-xs text-gray-600">Sistema de búsqueda vectorial con documentos PDF</p>
                   </div>
                   <div 
                     onClick={() => handleSetBackend('gemini')}
@@ -879,7 +932,7 @@ export default function ChatInterface() {
                   }`}></div>
                   <span>
                     {currentChat?.backend === 'python' 
-                      ? 'Modelo Python' 
+                      ? 'Modelo Python RAG' 
                       : currentChat?.backend === 'gemini' 
                         ? 'Modelo N8N + Gemini' 
                         : 'Modelo N8N + ChatGPT'}
